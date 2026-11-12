@@ -1437,7 +1437,7 @@ static void on_event(const unsigned char *p, const unsigned char *end)
         screen_words(SCREEN_WORDS_HEARD, said);
         core_mic_off(); if (core_state() == LISTENING) core_set_state(THINKING); break;
     case EV_INTENT_END: if (cont) core_restart_after(); break;
-    case EV_TTS_START:  fprintf(stderr, "reply: %s\n", text); screen_words(SCREEN_WORDS_REPLY, said); break;
+    case EV_TTS_START:  fprintf(stderr, "reply: %s\n", text); core_reply_not_understood(said); screen_words(SCREEN_WORDS_REPLY, said); break;
     case EV_INTENT_PROGRESS: if (!stream_now) break;    /* streaming TTS: the URL from RUN_START can be fetched already */
         /* fall through */
     case EV_TTS_END:
@@ -1464,7 +1464,7 @@ static void on_event(const unsigned char *p, const unsigned char *end)
         }
         /* nothing said: no failure to show (core_no_speech) */
         if (!strcmp(code, "stt-no-text-recognized")) { fprintf(stderr, "pipeline: nothing said\n"); core_no_speech(); break; }
-        fprintf(stderr, "pipeline error: %s\n", text); core_error(); break;
+        fprintf(stderr, "pipeline error: %s\n", text); core_failed(code); break;
     }
 }
 

@@ -92,6 +92,10 @@ void core_restart_after(void);                  /* start another pipeline once t
 int  core_wake_run_ended(int failed);            /* lock held: a run ended during a reply; 1: the one that only listened for the wake word */
 void core_run_over(void);                        /* lock held: the run has ended while its reply is (about to be) spoken; with -w remote the wake word may cut it */
 void core_error(void);
+/* Home Assistant's pipeline failed with this code: the error ring, or with retry_after_error (stt-*, intent-*) listening again */
+void core_failed(const char *code);
+/* the reply being spoken is Home Assistant's "I couldn't understand": with retry_after_error the Echo listens again after it (1) */
+int  core_reply_not_understood(const char *text);
 /* Home Assistant heard no request (stt-no-text-recognized): the turn ends quietly, without core_error's ring */
 void core_no_speech(void);
 /* Mute.  The mute button drives a hardware latch that cuts the mics and lights the button red; software can set that latch
@@ -104,6 +108,8 @@ int  core_sound_on(int s, int set);              /* sounds.h's sound has its swi
 int  core_wake_in_request(int set);              /* the request's audio from the wake word on, not after it; -1 reads */
 int  core_end_of_request(int set);               /* the end of a request heard on the Echo (micend.h: MICEND_*), -1 reads */
 int  core_stop_ends_listening(int set);          /* "<wake word>, stop" also ends listening (main.c stop_word), -1 reads */
+int  core_retry_after_error(int set);           /* a failed request is asked for again at once (main.c retry_ask), -1 reads */
+int  core_retry_tries(int set);                 /* how many times one request is asked for again (1..), -1 reads */
 int  core_bt_announce(int set);                  /* same: chime and "Connected to <name>" when a phone connects */
 int  core_bluetooth(int set);                   /* same; -B on the command line: leave the radio to the stock stack */
 int  core_dnd(int set);                          /* same: do not disturb, announcements are dropped (the protocol checks) */

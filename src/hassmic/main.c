@@ -754,6 +754,11 @@ static int wake_wait;                               /* lock held: the run now op
 static int wake_cut;
 static int wake_fails;                              /* lock held: wake word runs Home Assistant failed during this reply */
 static int follow_up;                               /* lock held: the pipeline now starting is a follow-up to a question */
+/* Listening again after a failed request (setting retry_after_error): retry_on; retry_tries (setting retry_tries, 1 by
+ * default): how many times one request is asked for again; retry_next: the run core_pipeline_finish starts next is
+ * the try after this one, retried the number of the try open now (0: the request itself), so the last try's failing
+ * ends the turn as before, never a loop */
+static int retry_on, retry_tries = 1, retry_next, retried;
 static void pipeline_start(uint64_t from)    /* from: where the wake word that starts it ended, 0: not a wake word */
 {
     run_over = 0; wake_wait = 0;
@@ -766,6 +771,7 @@ static void pipeline_start(uint64_t from)    /* from: where the wake word that s
      * end ended this one before any audio went out (heard_end in the capture thread) */
     micend_start(&mic_end, MICEND_OFF, 0, 0, NULL);
     run_wake = from != 0;
+    retried = 0;
     proto->start();
     atomic_store(&streaming, 1);
     int listen_now = core_local_wake || follow_up;      /* remote wake: a follow-up has no wake word to wait for */
@@ -1149,10 +1155,11 @@ void core_pipeline_finish(void)
         if (barge_in) sound_request(SND_WAKE);
         uint64_t from = barge_in ? barge_from : 0;      /* what was said after the wake word while the reply was cut */
         follow_up = barge_in && !core_local_wake;
-        barge_in = 0; barge_from = 0;
+        int again = barge_in ? retry_next : 0;         /* the next try of a failed request (retry_ask) */
+        barge_in = 0; barge_from = 0; retry_next = 0;
         pipeline_start(from);
-        follow_up = 0;
-    }
+        follow_up = 0; retried = again;
+    } else retry_next = 0;
 }
 
 void core_link(int up, int ready)
@@ -1176,6 +1183,80 @@ void core_error(void)
 {
     if (quiet_abort) { quiet_abort = 0; return; }      /* Home Assistant's complaint about a pipeline "stop" ended: not news */
     if (state != SPEAKING) { led("-s", "anim_start_error_short"); core_pipeline_finish(); }
+}
+
+/* Listening again after a failed request (setting retry_after_error, Voice, off by default): the Echo asks for the
+ * request again by itself, the wake sound and the listening ring say so, instead of waiting for the wake word once
+ * more.  A second try is wanted when the setting is on, this run is not one already (one more, never a loop), it is a
+ * request's run (not one that only listens for the wake word beside a reply, wake_wait), and the Echo is linked and not
+ * muted.  It goes the way of continue_conversation: barge_in, and core_pipeline_finish starts the run once the reply
+ * (if any) has been spoken, with the wake sound */
+static int retry_want(void) { return retry_on && retried < retry_tries && !wake_wait && connected && satellite_running && !core_muted(); }
+static void retry_ask(const char *why)
+{
+    fprintf(stderr, "pipeline: %s: listening again (try %d of %d)\n", why, retried + 1, retry_tries);
+    barge_in = 1; barge_from = 0; retry_next = retried + 1;
+}
+int core_retry_after_error(int set) { if (set >= 0) retry_on = set != 0; return retry_on; }
+int core_retry_tries(int set) { if (set >= 1) retry_tries = set; return retry_tries; }
+
+/* Home Assistant's pipeline failed with a code (proto_esphome.c EV_ERROR).  Speech to text or the agent gave up on the
+ * request (stt-stream-failed, intent-failed, intent-busy...): with retry_after_error the Echo listens again at once, no
+ * error ring; nothing said (stt-no-text-recognized) is core_no_speech's, not a failure.  The rest (wake-*, tts-*,
+ * validation) is nothing a second request mends: the error ring, as before */
+void core_failed(const char *code)
+{
+    if (quiet_abort) { quiet_abort = 0; return; }
+    if (state == SPEAKING) return;
+    if ((!strncmp(code, "stt-", 4) || !strncmp(code, "intent-", 7)) && retry_want()) { retry_ask(code); core_pipeline_finish(); return; }
+    led("-s", "anim_start_error_short"); core_pipeline_finish();
+}
+
+/* The reply about to be spoken is one of Home Assistant's own error responses: "Sorry, I couldn't understand that"
+ * (no_intent), "Sorry, I am not aware of any device called X" (no_entity), no area, floor or kind of device by that
+ * name, not exposed, several by that name, no such timer, an unexpected error: the 31 `responses.errors` of
+ * home-assistant/intents sentences/<lang>/_common.yaml (2026-11-12), in every language the page lists.  Home Assistant
+ * tells the Echo nothing else of them: the response type stays in intent_output, of which its ESPHome integration sends
+ * only conversation_id, continue_conversation and the speech (assist_satellite.py), and no ERROR event is raised
+ * (assist_pipeline/default_pipeline.py).  So the text is searched for a phrase per language: many responses open with
+ * the name ("{{ entity }} existiert nicht", "{{ area }} har ingen..."), so not a prefix; each phrase is one no ordinary
+ * response of the intents has (checked by rendering every error response, its template branches included, and every
+ * other response of the responses/<lang> files: all 31 x 14 hit, none of the others; English and Finnish say "Sorry," for
+ * a person not found too, as much a failed request).  An agent of one's own (an LLM) words these as it likes: not seen
+ * here, unless it happens to open with "Sorry, ".  With retry_after_error the Echo listens again once the sentence
+ * has been said, as for continue_conversation; Home Assistant's Romanian no_intent even asks for it ("Poți, te rog, să
+ * repeți?").  Only in the request's run (THINKING, or LISTENING when Home Assistant's VAD end did not come first), so
+ * a reply from elsewhere is not one.  1: it will */
+int core_reply_not_understood(const char *text)
+{
+    static const char *const failed[] = {
+        /* en, nl */ "Sorry, ", "An unexpected error occurred",
+        /* de */ "Entschuldigung, das habe ich nicht verstanden", "unerwarteter Fehler", "mit dem Namen", "wurde kein", "existiert nicht",
+        "nicht vorhanden", "Kein Gerät", "Es läuft gerade kein", "freigegeben", "wurden mehrere", "Timer konnte ich nicht finden",
+        "nicht mehrere Timer", "Timer werden auf diesem Gerät nicht unterstützt", "mehr als ein Gerät gefunden",
+        /* fr */ "Désolé, ", "Une erreur est intervenue",
+        /* es */ "Lo siento, ", "error inesperado",
+        /* it */ "Mi dispiace, ", "errore inatteso",
+        /* pt */ "Desculpe, não percebi", "Não existe nenhum", "não contém", "erro inesperado", "Nenhum dispositivo", "está exposto",
+        "Existem vários dispositivos", "Mais do que um dispositivo", "Não encontrei esse temporizador", "vários temporizadores",
+        "não suporta temporizadores",
+        /* sv */ "Ursäkta, jag förstår inte", "oväntat fel", "kunde hittas", "har inga ", "har ingen ", "Det finns ingen enhet",
+        "exponerad", "Det finns flera enheter", "kan inte hitta den timern", "flera timers samtidigt", "hanterar inte timers",
+        "fler än en enhet",
+        /* nb */ "Jeg skjønte dessverre ikke", "Det er ingen ", "Finner ingen", "Finner ikke", "uventet feil", "er ikke eksponert",
+        "Det finnes flere enheter", "Ingen enhet støtter", "mer enn én enhet", "flere tidtakere samtidig", "Tidtakere støttes ikke",
+        /* pl */ "Wybacz, niestety", "nieoczekiwany błąd", "Brak obszaru", "Brak piętra", "Brak domeny", "Brak urządzenia", "nie ma domeny",
+        "nie zawiera", "żadne urządzenie nie", "udostępnion", "Przykro mi, ", "takiego minutnika", "wielu minutników",
+        "nie obsługuje minutników",
+        /* ro */ "Îmi pare rău, ",
+        /* ja */ "すみません、", "予期せぬエラー",
+        /* fi */ "Pahoittelut, ", "Odottamaton virhe", "ei löydy",
+        /* da */ "Undskyld", "uventet fejl",
+    };
+    if (!text || (state != THINKING && state != LISTENING) || !retry_want()) return 0;
+    for (size_t i = 0; i < sizeof failed / sizeof *failed; i++)
+        if (strstr(text, failed[i])) { retry_ask("not understood"); return 1; }
+    return 0;
 }
 
 /* Nothing said after the wake word (or the button, or a follow-up question): the wake word was meant for another
@@ -1351,10 +1432,12 @@ static void stop_word(void)
         if (connected && proto->cancel) quiet_cancel();
         else { barge_in = 0; core_pipeline_finish(); quiet_abort = 1; }
     } else {
-        int quiet = state == LISTENING && stop_ends && stop_heard() && connected && proto->cancel;
+        /* retried: a try after a failed request (retry_ask) listens long after its wake word, past stop_heard's 4 s: any
+         * "stop" ends it, setting or not (it was never asked for by a wake word of its own) */
+        int quiet = state == LISTENING && ((stop_ends && stop_heard()) || retried) && connected && proto->cancel;
         if (!ended && atomic_load(&music_on) && music_stop()) { paused = 1; fprintf(stderr, "stop: music paused%s\n", quiet ? "" : ", the pipeline goes on"); }
         if (quiet) {                                            /* as the button: nothing of the run is carried out */
-            fprintf(stderr, "stop: listening ended\n");
+            fprintf(stderr, "stop: listening ended%s\n", retried ? " (the try after a failed request)" : "");
             atomic_fetch_and(&sounds_pending, ~(1 << SND_WAKE | 1 << SND_TOUCH));
             quiet_cancel();
             ended = 1;
@@ -2442,6 +2525,25 @@ int core_transcript(const char *text)
             dropin_hangup("said hang up");
             if (connected && proto->cancel) { barge_in = 0; atomic_store(&streaming, 0); proto->cancel(); quiet_abort = 1; }
             core_pipeline_finish();
+            return 1;
+        }
+    }
+    /* A try after a failed request (retry_ask, retried): "stop" or a word of giving up ends it as the button would, and
+     * the run is cancelled, not sent on: sent, it would be one more request Home Assistant does not understand, and
+     * one more try.  As spelled by speech to text, compared without spaces or case (the folding above): "never mind" is
+     * "nevermind"; the Romanian ones with and without their diacritics */
+    if (retried) {
+        static const char *const cancels[] = {
+            "renunță", "renunta", "anulează", "anuleaza", "lasă", "lasa", "nimic", "nulasă", "nulasa",
+            "cancel", "nevermind", "forgetit", "nothing", "abbrechen", "abbruch", "vergisses", "egal", "nichts", "lasses",
+            "annuler", "annule", "laissetomber", "rien", "oublie", "cancelar", "cancela", "olvídalo", "olvidalo", "nada", "déjalo",
+            "dejalo", "annulla", "annullare", "lasciastare", "lasciaperdere", "niente", "esquece", "deixa", "annuleren", "annuleer",
+            "laatmaar", "niets", "vergeethet", "avbryt", "glömdet", "inget", "ingenting", "annuller", "glemdet", "peruuta", "unohda",
+            "eimitään", "anuluj", "nieważne", "niewazne", "nic", "キャンセル", "やめて", "なんでもない" };
+        int give = said(w, stops, sizeof stops / sizeof *stops) || said(w, cancels, sizeof cancels / sizeof *cancels);
+        if (give) {
+            fprintf(stderr, "transcript: \"%s\" on the try after a failed request: withdrawn, listening ended\n", text);
+            if (connected && proto->cancel) quiet_cancel(); else core_pipeline_finish();
             return 1;
         }
     }
