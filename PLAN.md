@@ -2987,6 +2987,25 @@ Run in this order. Each step says what it proves.
       Wyoming has no `cancel`: ended there as before.  Tests: fake_ha_esphome_timers.py (ring + wake word + stop: one
       abort, a late STT_START leaves the Echo idle, the next wake word starts a run; red before), fake_ha_esphome.py
       (reply cut + stop: one abort).
+- [x] Listening again after a failed request (2026-11-12; setting `retry_after_error`, Voice, page only, exported, off by
+      default).  The case: a misheard command gets "Sorry, I couldn't understand that" and the wake word has to be said
+      again.  Two signals from HA: EV_ERROR with a code (`core_failed`: `stt-*`, `intent-*` retry; `wake-*`, `tts-*`,
+      validation keep the error ring; `stt-no-text-recognized` stays `core_no_speech`), and the no_intent reply, which
+      HA does not flag: `default_pipeline.py` raises no error for an ERROR-typed response (INTENT_END, then TTS of the
+      speech), and `esphome/assist_satellite.py` forwards only conversation_id, continue_conversation and the speech
+      of intent_output.  So `core_reply_not_understood` searches the TTS_START text for a phrase per language of the
+      intents' 31 `responses.errors` (no_intent, no_entity, no_area, no_floor, no_domain, not exposed, duplicates,
+      timers, handle_error; sentences/<lang>/_common.yaml of home-assistant/intents, 2026-11-12), a substring, as de,
+      pt, sv, nb, pl open with the name; chosen so that, rendered with jinja2 over every template branch, all 31 x 14
+      hit and no other response of responses/<lang>/*.yaml does (en and fi say "Sorry," for a person not found too).
+      Both go the continue_conversation way (`retry_ask`: `barge_in`, `retry_next`), so the run starts
+      after the reply, with SND_WAKE and LISTENING; `retried` numbers that run's try, `retry_tries` (setting `retry_tries`,
+      1..5, default 1) how many: no loop.  Out of a try (`retried`): the "stop" keyword or transcript ends it in
+      `stop_word` as stop_ends_listening does, past `stop_heard`'s 4 s (the try starts after the reply, long after its
+      wake word), and `core_transcript` cancels the run on a word of giving up per language (`cancels`, compared without
+      spaces or case) instead of sending it on as one more failing request.  Not while a run
+      only listens for the wake word beside a reply (`wake_wait`), muted, or unlinked.  Wyoming: not done (no reply
+      text with a type there either).  Test: `tests/fake_ha_retry.py`.
 - [x] "<wake word>, stop" ends listening (2026-10-20; setting `stop_ends_listening`, Voice, page only, exported, off
       by default).  The case: an Echo that woke wrongly (TV, talk in the room) listens up to 15 s (HA's VAD limit,
       `assist_pipeline/vad.py`) and HA carries out what STT made of it; the only quiet way out was the action button.

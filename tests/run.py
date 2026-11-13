@@ -57,6 +57,7 @@ TESTS = [
     ("wakesound", [PY, "tests/fake_ha_wakesound.py"]),
     ("remote-bargein", [PY, "tests/fake_ha_remote_bargein.py"]),
     ("remote-followup", [PY, "tests/fake_ha_remote_followup.py"]),
+    ("retry", [PY, "tests/fake_ha_retry.py"]),
     ("davs", [PY, "tests/fake_web_davs.py"]),
     ("ota-push", ["sh", "tests/ota_push_test.sh"]),
     ("ring", [PY, "tests/fake_ha_ring.py"]),

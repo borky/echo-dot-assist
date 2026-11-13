@@ -22,6 +22,16 @@ What changed for people using the Echo, newest first. Details and measurements a
   Until then the face shows as always. A touch on the clock, a request, a timer, the volume or music starting bring
   the face back, and the wait starts again. **Screen sleeps after** sets that wait in minutes (0: never, the face
   stays). With an app or the music page in front the screen goes dark as before. Off and 5 minutes by default.
+- **The Echo can listen again when Home Assistant did not understand (optional, off by default).** New setting "Listen
+  again after a failed request" (settings page, Voice): when the reply is one of Home Assistant's own error sentences
+  ("Sorry, I couldn't understand that", "I am not aware of any device called X", no such area, not exposed, several by
+  that name..., in any language the page lists), or speech-to-text or the agent failed, the Echo plays the wake sound,
+  shows the listening ring and takes your request again, no wake word needed, the way it already does when a reply ends
+  in a question. One more try per request ("Tries after a failed request" sets how many, up to 5); a failure on the
+  last try, or silence, ends the turn as before; so does "stop" or a word of giving up ("never mind", "cancel",
+  "renunță", "vergiss es"...) said on a try, or the action button. Only Home Assistant's
+  own sentences are recognised, not an LLM agent's words.
+
 - **A tighter wall between hassmic and root (issue #130).** If something ever took hassmic over, it could have had
   root overwrite one of root's own files, set system properties (open adb, start any service) or connect to an open
   adb itself, and from there run as root. Root now treats everything hassmic leaves for it as hostile, the firewall

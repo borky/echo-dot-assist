@@ -111,6 +111,19 @@ System) off takes any certificate, but then anyone on your network could slip th
   timer" does), media Home Assistant plays on other speakers is paused with "Alexa, pause" instead, and now and then the engine
   hears "stop" in a short command (one Echo's week: 2 in 354 requests it answered): that command is lost, say it
   again. ESPHome only. The log says `stop: listening ended` or `stop: came during the round, nothing started`.
+- **Listening again after a failed request** ("Listen again after a failed request" on the
+  [settings page](#settings-page), Voice, off by default). When Home Assistant answers with one of its own error
+  sentences ("Sorry, I couldn't understand that", "I am not aware of any device called X", no such area or floor, not
+  exposed, several devices by that name, no such timer, an unexpected error; in any language the page lists), or
+  reports that speech-to-text broke off or the agent failed, the Echo does not wait for the wake word again: once the
+  sentence is said it plays the wake sound, shows the listening ring and takes the request anew, as it does when a
+  reply ends in a question. One more try per request ("Tries after a failed request" allows up to 5), never a loop:
+  a failure on the last try ends the turn as before. To get out of a try: say nothing, press the action button, or say
+  "stop" or a word of giving up ("never mind", "cancel", "forget it", "nothing", "renunță", "anulează", "vergiss es",
+  "laisse tomber", "olvídalo", "lascia stare", "laat maar"...): the Echo stops listening quietly and sends nothing on
+  (the log: `withdrawn, listening ended`). On the request itself these words go to Home Assistant as any request. Not for the words of an agent of your own (an LLM phrases these as it likes), unless
+  they open with "Sorry,". ESPHome only. The log says `pipeline: not understood: listening again` or
+  `pipeline: <code>: listening again`.
 - While a timer rings or something plays, the wake word is accepted more readily, as Amazon's models are tuned to do.
 - A finished timer rings for a minute ("Timers ring for" on the [settings page](#settings-page): 10 s to 10 min, or
   until stopped), with the cyan timer animation on the ring. Only an explicit stop ends it: "<wake word>, stop", the
