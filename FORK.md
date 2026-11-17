@@ -20,10 +20,11 @@ go upstream; this file says what has not yet, and how the branches are kept so t
 Once upstream merges a pull request, `main` is fast-forwarded, the branch is deleted, and `develop` is rebuilt on
 `main`: its commits are then upstream's.
 
-## What this fork has that upstream does not (2026-11-13)
+## What this fork has that upstream does not (2026-11-17)
 
 Merged upstream and gone from this list: #168 (Echo Show 5: Wi-Fi no longer drops every few minutes), #169 (the
-clock on an idle Echo Show screen), #170 (more languages for the Echo's own words, Romanian among them).
+clock on an idle Echo Show screen), #170 (more languages for the Echo's own words, Romanian among them), #179 (Wi-Fi
+motion: the kernel module hooks the Wi-Fi driver again when Android reloads it).
 
 - **Listening again after a failed request** (`feat/retry-after-error`, not yet proposed upstream). Setting "Listen
   again after a failed request" (off by default) and "Tries after a failed request" (1 to 5): when Home Assistant
@@ -32,11 +33,5 @@ clock on an idle Echo Show screen), #170 (more languages for the Echo's own word
   Home Assistant has them in) or speech-to-text or the agent failed, the Echo listens again without the wake word, as
   it does after a question. "Stop" or a word of giving up ("never mind", "cancel", "renunță", "vergiss es"...) said on
   such a try ends it quietly without sending it on. Test: `tests/fake_ha_retry.py`.
-- **Wi-Fi motion survives Wi-Fi going off and on** (`fix/wifi-motion-rehook`, pull request to be opened). Android
-  reloads the Wi-Fi driver whenever Wi-Fi is switched off and on, and the kernel module's hook went with the old
-  driver: no frame was counted any more and the sensor stayed "unknown" for good. The module now hooks the driver
-  again each time it comes back (a module notifier), and hassmic reports a counter that stopped for a minute and
-  shows the sensor as unknown instead of staying silent. Needs a restart of the Echo once (the old module cannot
-  be unloaded).
 
 What each pull request should say, and the commands to push them, are kept outside the repository.
